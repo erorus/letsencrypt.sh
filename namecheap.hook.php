@@ -93,6 +93,9 @@ function deploy_challenge($args) {
 
     for ($x = 0; $x < count($args); $x += 2) {
         $keyAuth = $args[$x + 1];
+        if ($keyAuth === false) {
+            continue;
+        }
         $subdomain = trim(substr($args[$x], 0, -1 * strlen($domain)), '.');
 
         if ($subdomain != '') {
@@ -104,7 +107,7 @@ function deploy_challenge($args) {
             'Type' => 'TXT',
             'Address' => $keyAuth,
             'MXPref' => 10,
-            'TTL' => 1800,
+            'TTL' => 300,
         );
     }
 
@@ -117,32 +120,10 @@ function deploy_challenge($args) {
 }
 
 function clean_challenge($args) {
-    if (count($args) < 3) {
-        fwrite(STDERR, " + ERROR: Namecheap hook deploy expects at least 3 arguments\n");
-        return 1;
+    for ($x = 2; $x < count($args); $x += 2) {
+        $args[$x] = false; // wipe keyauth
     }
-    if (count($args) % 2 == 0) {
-        fwrite(STDERR, " + ERROR: Namecheap hook deploy expects odd number of arguments\n");
-        return 1;
-    }
-
-    $domain = array_shift($args);
-    if (strpos($domain, '.') === false) {
-        fwrite(STDERR, " + ERROR: Namecheap hook deploy expects domain as first argument\n");
-        return 1;
-    }
-
-    $hosts = namecheap_get_hosts($domain);
-    if ($hosts === false) {
-        return 1;
-    }
-
-    $ret = namecheap_set_hosts($domain, $hosts);
-    if ($ret === false) {
-        return 1;
-    }
-
-    return 0;
+    return deploy_challenge($args);
 }
 
 function namecheap_get_hosts($domain) {
