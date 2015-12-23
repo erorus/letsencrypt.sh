@@ -1,0 +1,7 @@
+<?php
+
+define('API_USER', 'demo'); // Namecheap API username
+define('API_KEY', 'f0e1d2c3b4a59687f0e1d2c3b4a59687'); // Namecheap API key
+define('API_IP', ''); // Your whitelisted external IP address; leave blank to auto-detect
+
+define('HOOK_PASSTHROUGH', ''); // path to another hook script to call after this one
