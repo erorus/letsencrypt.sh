@@ -18,7 +18,6 @@ HOOK=
 RENEW_DAYS="14"
 PRIVATE_KEY=
 KEYSIZE="4096"
-WELLKNOWN=
 PRIVATE_KEY_RENEW="no"
 OPENSSL_CNF="$(openssl version -d | cut -d'"' -f2)/openssl.cnf"
 CONTACT_EMAIL=
@@ -27,9 +26,6 @@ set_defaults() {
   # Default config variables depending on BASEDIR
   if [[ -z "${PRIVATE_KEY}" ]]; then
     PRIVATE_KEY="${BASEDIR}/private_key.pem"
-  fi
-  if [[ -z "${WELLKNOWN}" ]]; then
-    WELLKNOWN="${BASEDIR}/.acme-challenges"
   fi
 
   LOCKFILE="${BASEDIR}/lock"
@@ -93,7 +89,6 @@ init_system() {
   trap 'remove_lock' EXIT
 
   # Export some environment variables to be used in hook script
-  export WELLKNOWN
   export BASEDIR
   export CONFIG
 
@@ -154,8 +149,8 @@ init_system() {
     exit 1
   fi
 
-  if [[ ! -e "${WELLKNOWN}" ]]; then
-    echo " + ERROR: WELLKNOWN directory doesn't exist, please create ${WELLKNOWN} and set appropriate permissions." >&2
+  if [[ ! -n "${HOOK}" ]]; then
+    echo " + ERROR: no hook script specified" >&2
     exit 1
   fi
 }
@@ -220,7 +215,7 @@ _request() {
 
     # Wait for hook script to clean the challenge if used
     if [[ -n "${HOOK}" ]] && [[ -n "${challenge_token:+set}"  ]]; then
-      ${HOOK} "clean_challenge" '' "${challenge_token}" "${keyauth}"
+      ${HOOK} "clean_challenge" ${deploy_args}
     fi
 
     # remove temporary domains.txt file if used
@@ -313,6 +308,7 @@ sign_domain() {
   openssl req -new -sha256 -key "${BASEDIR}/certs/${domain}/${privkey}" -out "${BASEDIR}/certs/${domain}/cert-${timestamp}.csr" -subj "/CN=${domain}/" -reqexts SAN -config "${tmp_openssl_cnf}"
   rm -f "${tmp_openssl_cnf}"
 
+  deploy_args="${domain}"
   # Request and respond to challenges
   for altname in $altnames; do
     # Ask the acme-server for new challenge token and extract them from the resulting json block
@@ -321,7 +317,7 @@ sign_domain() {
 
     challenges="$(printf '%s\n' "${response}" | get_json_array challenges)"
     repl=$'\n''{' # fix syntax highlighting in Vim
-    challenge="$(printf "%s" "${challenges//\{/${repl}}" | grep 'http-01')"
+    challenge="$(printf "%s" "${challenges//\{/${repl}}" | grep 'dns-01')"
     challenge_token="$(printf '%s' "${challenge}" | get_json_string_value token | sed 's/[^A-Za-z0-9_\-]/_/g')"
     challenge_uri="$(printf '%s' "${challenge}" | get_json_string_value uri)"
 
@@ -333,15 +329,18 @@ sign_domain() {
     # Challenge response consists of the challenge token and the thumbprint of our public certificate
     keyauth="${challenge_token}.${thumbprint}"
 
-    # Store challenge response in well-known location and make world-readable (so that a webserver can access it)
-    printf '%s' "${keyauth}" > "${WELLKNOWN}/${challenge_token}"
-    chmod a+r "${WELLKNOWN}/${challenge_token}"
+    # Generate SHA256 digest of key auth for DNS challenges
+    keyauth_digest="$(printf '%s' "${keyauth}" | shasum -a 256 | awk '{print $1}')"
 
-    # Wait for hook script to deploy the challenge if used
-    if [[ -n "${HOOK}" ]]; then
-        ${HOOK} "deploy_challenge" "${altname}" "${challenge_token}" "${keyauth}"
-    fi
+    deploy_args="${deploy_args} ${altname} ${keyauth_digest}"
+  done
 
+  # Wait for hook script to deploy the challenge if used
+  if [[ -n "${HOOK}" ]]; then
+    ${HOOK} "deploy_challenge" ${deploy_args}
+  fi
+
+  for altname in $altnames; do
     # Ask the acme-server to verify our challenge and wait until it becomes valid
     echo " + Responding to challenge for ${altname}..."
     result="$(signed_request "${challenge_uri}" '{"resource": "challenge", "keyAuthorization": "'"${keyauth}"'"}')"
@@ -354,21 +353,24 @@ sign_domain() {
       status="$(_request get "${challenge_uri}" | get_json_string_value status)"
     done
 
-    rm -f "${WELLKNOWN}/${challenge_token}"
-
-    # Wait for hook script to clean the challenge if used
-    if [[ -n "${HOOK}" ]] && [[ -n "${challenge_token}" ]]; then
-      ${HOOK} "clean_challenge" "${altname}" "${challenge_token}" "${keyauth}"
-    fi
 
     if [[ "${status}" = "valid" ]]; then
       echo " + Challenge is valid!"
     else
       echo " + Challenge is invalid! (returned: ${status})" >&2
-      exit 1
+      break
     fi
 
   done
+
+  # Wait for hook script to clean the challenge if used
+  if [[ -n "${HOOK}" ]] && [[ -n "${challenge_token}" ]]; then
+    ${HOOK} "clean_challenge" ${deploy_args}
+  fi
+
+  if [[ "${status}" != "valid" ]]; then
+    exit 1
+  fi
 
   # Finally request certificate from the acme-server and store it in cert-${timestamp}.pem and link from cert.pem
   echo " + Requesting certificate..."
@@ -543,7 +545,7 @@ command_help() {
 command_env() {
   echo "# letsencrypt.sh configuration"
   typeset -p CONFIG
-  typeset -p CA LICENSE BASEDIR WELLKNOWN PRIVATE_KEY KEYSIZE OPENSSL_CNF HOOK RENEW_DAYS PRIVATE_KEY_RENEW CONTACT_EMAIL
+  typeset -p CA LICENSE BASEDIR PRIVATE_KEY KEYSIZE OPENSSL_CNF HOOK RENEW_DAYS PRIVATE_KEY_RENEW CONTACT_EMAIL
   exit 0
 }
 
