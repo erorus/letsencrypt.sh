@@ -1,8 +1,12 @@
 #!/usr/bin/php
 <?php
 
+require_once(__DIR__.'/phpdns/dns.inc.php');
+
 define('API_HOST', 'https://api.namecheap.com/xml.response');
 define('CHALLENGE_PREFIX', '_acme-challenge');
+define('MAX_DNS_WAIT_SECONDS', 600);
+define('DNS_POLL_INTERVAL_SECONDS', 30);
 
 if (file_exists(__DIR__.'/namecheap.config.php')) {
     require_once __DIR__.'/namecheap.config.php';
@@ -19,8 +23,7 @@ function main() {
             case 'deploy_challenge':
                 $ret = deploy_challenge(array_slice($argv, 2));
                 if ($ret == 0) {
-                    fwrite(STDERR, " + Waiting 10 seconds for DNS to update..\n");
-                    sleep(10);
+                    $ret = wait_for_dns_updates(array_slice($argv, 2));
                 }
                 break;
             case 'clean_challenge':
@@ -155,6 +158,7 @@ function namecheap_get_hosts($domain) {
         'Command' => 'namecheap.domains.dns.getHosts',
     );
 
+    fwrite(STDERR, " + Getting hosts from Namecheap API for $domain...\n");
     $hostXML = post_to_namecheap($post);
     if (!$hostXML) {
         fwrite(STDERR, " + ERROR: Namecheap hook could not get current hosts from Namecheap API\n");
@@ -260,6 +264,7 @@ function namecheap_set_hosts($domain, $hosts) {
         $post["TTL$n"] = $hosts[$x]['TTL'];
     }
 
+    fwrite(STDERR, " + Setting hosts via Namecheap API for $domain...\n");
     $hostXML = post_to_namecheap($post);
     if (!$hostXML) {
         fwrite(STDERR, " + ERROR: Namecheap hook could not set current hosts via Namecheap API\n");
@@ -334,6 +339,51 @@ function post_to_namecheap($post) {
 
     return $ret;
 }
+
+function wait_for_dns_updates($args) {
+    $domain = array_shift($args);
+    $recs = dns_get_record($domain, DNS_NS);
+    if (count($recs) == 0) {
+        fwrite(STDERR, " + ERROR: could not find authoritative name server for $domain\n");
+        return 1;
+    }
+    $ns = $recs[0]['target'];
+    $dnsQuery = new DNSQuery($ns);
+
+    for ($x = 0; $x < count($args); $x += 2) {
+        $hostname = CHALLENGE_PREFIX . '.' . $args[$x];
+        $txt = $args[$x+1];
+        $started = time();
+        $found = false;
+        while (($started + MAX_DNS_WAIT_SECONDS) > time()) {
+            $recs = $dnsQuery->Query($hostname, 'TXT');
+            if ($recs === false || $dnsQuery->error != 0) {
+                fwrite(STDERR, " + ERROR: Error fetching host records for $hostname from $ns\n");
+                break;
+            }
+            for ($y = 0; $y < $recs->count; $y++) {
+                if (($recs->results[$y]->typeid == "TXT") && ($recs->results[$y]->data == $txt)) {
+                    fwrite(STDERR, " + Found authorization record for $hostname\n");
+                    $found = true;
+                    break 2;
+                }
+            }
+            $toWait = min(DNS_POLL_INTERVAL_SECONDS, $started + MAX_DNS_WAIT_SECONDS - time() - 1);
+            if ($toWait <= 0) {
+                break;
+            }
+            fwrite(STDERR, " + Waiting $toWait seconds before checking for authorization record on $hostname again...\n");
+            sleep($toWait);
+        }
+        if (!$found) {
+            fwrite(STDERR, " + ERROR: Never found authorization record for $hostname after waiting " . MAX_DNS_WAIT_SECONDS . " seconds, aborting\n");
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 
 class XmlElement {
     var $name;
