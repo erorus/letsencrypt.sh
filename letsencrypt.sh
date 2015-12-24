@@ -309,6 +309,8 @@ sign_domain() {
   rm -f "${tmp_openssl_cnf}"
 
   deploy_args="${domain}"
+  local idx=0
+  local -a challenge_uris keyauths
   # Request and respond to challenges
   for altname in $altnames; do
     # Ask the acme-server for new challenge token and extract them from the resulting json block
@@ -333,6 +335,9 @@ sign_domain() {
     keyauth_digest="$(printf '%s' "${keyauth}" | shasum -a 256 | awk '{print $1}')"
 
     deploy_args="${deploy_args} ${altname} ${keyauth_digest}"
+    challenge_uris[$idx]="${challenge_uri}"
+    keyauths[$idx]="${keyauth}"
+    idx=$((idx+1))
   done
 
   # Wait for hook script to deploy the challenge if used
@@ -340,7 +345,11 @@ sign_domain() {
     ${HOOK} "deploy_challenge" ${deploy_args}
   fi
 
+  idx=0
   for altname in $altnames; do
+    challenge_uri="${challenge_uris[$idx]}"
+    keyauth="${keyauths[$idx]}"
+    idx=$((idx+1))
     # Ask the acme-server to verify our challenge and wait until it becomes valid
     echo " + Responding to challenge for ${altname}..."
     result="$(signed_request "${challenge_uri}" '{"resource": "challenge", "keyAuthorization": "'"${keyauth}"'"}')"
