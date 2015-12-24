@@ -5,8 +5,8 @@ require_once(__DIR__.'/phpdns/dns.inc.php');
 
 define('API_HOST', 'https://api.namecheap.com/xml.response');
 define('CHALLENGE_PREFIX', '_acme-challenge');
-define('MAX_DNS_WAIT_SECONDS', 600);
-define('DNS_POLL_INTERVAL_SECONDS', 30);
+define('MAX_DNS_WAIT_SECONDS', 900);
+define('DNS_POLL_INTERVAL_SECONDS', 45);
 
 if (file_exists(__DIR__.'/namecheap.config.php')) {
     require_once __DIR__.'/namecheap.config.php';
@@ -303,13 +303,12 @@ function namecheap_set_hosts($domain, $hosts) {
     return true;
 }
 
-function post_to_namecheap($post) {
+function post_to_namecheap($post, $retries=0) {
     if (!function_exists('curl_init')) {
         fwrite(STDERR, " + ERROR: Namecheap hook needs curl library!\n");
         return false;
     }
 
-    $f = false;
     $ch = curl_init();
     curl_setopt_array($ch, array(
             CURLOPT_URL => API_HOST,
@@ -332,8 +331,13 @@ function post_to_namecheap($post) {
     }
     $ret = trim(curl_exec($ch));
     if ($errno = curl_errno($ch)) {
-        fwrite(STDERR, " + ERROR: Namecheap hook generated curl error $errno: ".trim(curl_error($ch))."\n");
-        $ret = false;
+        if ($errno == 28 && $retries < 3) { // timed out
+            fwrite(STDERR, " + WARNING: Namecheap hook generated curl error $errno: ".trim(curl_error($ch)).". Retrying..\n");
+            $ret = post_to_namecheap($post, $retries+1);
+        } else {
+            fwrite(STDERR, " + ERROR: Namecheap hook generated curl error $errno: ".trim(curl_error($ch))."\n");
+            $ret = false;
+        }
     }
     curl_close($ch);
 
