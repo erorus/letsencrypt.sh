@@ -49,34 +49,11 @@ example.net www.example.net wiki.example.net
 This states that there should be two certificates `example.com` and `example.net`,
 with the other domains in the corresponding line being their alternative names.
 
-### $WELLKNOWN / challenge-response
+### challenge-response
 
-Boulder (acme-server) is looking for challenge responses under your domain in the `.well-known/acme-challenge` directory
+This script uses `dns-01`-type verification so you need to have a hook to set the txt records on the domain.
 
-This script uses `http-01`-type verification (for now) so you need to have the that directory available over normal http (no ssl).
-
-A full URL would look like `http://example.org/.well-known/acme-challenge/c3VjaC1jaGFsbGVuZ2UtbXVjaA-aW52YWxpZC13b3c`.
-
-An example setup to get this to work would be:
-
-nginx.conf:
-```
-...
-location /.well-known/acme-challenge {
-  alias /var/www/letsencrypt;
-}
-...
-```
-
-config.sh:
-```bash
-...
-WELLKNOWN="/var/www/letsencrypt"
-...
-```
-
-An alternative to setting the WELLKNOWN variable would be to create a symlink to the default location next to the script (or BASEDIR):
-`ln -s /var/www/letsencrypt .acme-challenges`
+A hook (written in PHP) is supplied using the Namecheap API for Namecheap-hosted DNS. It has its own small configuration for API keys in namecheap.config.php.
 
 ## Import
 
