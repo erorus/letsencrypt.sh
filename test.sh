@@ -71,7 +71,7 @@ _CHECK_ERRORLOG() {
 if [[ ! -e "ngrok/ngrok" ]]; then
   (
     mkdir -p ngrok
-    cd ngrog
+    cd ngrok
     wget https://dl.ngrok.com/ngrok_2.0.19_linux_amd64.zip -O ngrok.zip
     unzip ngrok.zip ngrok
     chmod +x ngrok
@@ -100,6 +100,7 @@ mkdir -p .acme-challenges/.well-known/acme-challenge
 echo 'CA="https://testca.kurz.pw/directory"' > config.sh
 echo 'LICENSE="https://testca.kurz.pw/terms/v1"' >> config.sh
 echo 'WELLKNOWN=".acme-challenges/.well-known/acme-challenge"' >> config.sh
+echo 'RENEW_DAYS="14"' >> config.sh
 touch domains.txt
 
 # Check if help command is working
@@ -120,7 +121,7 @@ _CHECK_ERRORLOG
 # Temporarily move config out of the way and try signing certificate by using temporary config location
 _TEST "Try signing using temporary config location and with domain as command line parameter"
 mv config.sh tmp_config.sh
-./letsencrypt.sh --cron --domain "${TMP_URL} ${TMP2_URL}" -f tmp_config.sh > tmplog 2> errorlog || _FAIL "Script execution failed"
+./letsencrypt.sh --cron --domain "${TMP_URL}" --domain "${TMP2_URL}" -f tmp_config.sh > tmplog 2> errorlog || _FAIL "Script execution failed"
 _CHECK_NOT_LOG "Checking domain name(s) of existing cert"
 _CHECK_LOG "Generating private key"
 _CHECK_LOG "Requesting challenge for ${TMP_URL}"
@@ -184,7 +185,7 @@ _TEST "Revoking certificate..."
 ./letsencrypt.sh --revoke "certs/${TMP_URL}/cert.pem" --privkey "certs/${TMP_URL}/privkey.pem" > tmplog 2> errorlog || _FAIL "Script execution failed"
 REAL_CERT="$(readlink -n "certs/${TMP_URL}/cert.pem")"
 _CHECK_LOG "Revoking certs/${TMP_URL}/${REAL_CERT}"
-_CHECK_LOG "SUCCESS"
+_CHECK_LOG "Done."
 _CHECK_FILE "certs/${TMP_URL}/${REAL_CERT}-revoked"
 _CHECK_ERRORLOG
 

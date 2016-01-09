@@ -4,15 +4,14 @@ This is a client for signing certificates with an ACME-server (currently only pr
 
 It uses the `openssl` utility for everything related to actually handling keys and certificates, so you need to have that installed.
 
-Other dependencies are (for now): curl, sed
-
-Perl no longer is a dependency.
-The only remaining perl code in this repository is the script you can use to convert your existing letsencrypt-keyfile into something openssl (and this script) can read.
+Other dependencies are: curl, sed, grep, mktemp (all found on almost any system, curl being the only exception)
 
 Current features:
 - Signing of a list of domains
-- Renewal if a certificate is about to expire
+- Renewal if a certificate is about to expire or SAN (subdomains) changed
 - Certificate revocation
+
+If you want to import existing keys from the official letsencrypt client have a look at [Import from official letsencrypt client](https://github.com/lukas2511/letsencrypt.sh/wiki/Import-from-official-letsencrypt-client).
 
 Please keep in mind that this software and even the acme-protocol are relatively young and may still have some unresolved issues.
 Feel free to report any issues you find with this script or contribute by submitting a pullrequest.
@@ -31,10 +30,12 @@ Commands:
  --env (-e)                       Output configuration variables for use in other scripts
 
 Parameters:
- --domain (-d) domain.tld         Use specified domain name instead of domains.txt, use multiple times for certificate with SAN names
- --force (-x)                     force renew of certificate even if it is longer valid than value in RENEW_DAYS
- --config (-f) path/to/config.sh  Use specified config file
+ --domain (-d) domain.tld         Use specified domain name(s) instead of domains.txt entry (one certificate!)
+ --force (-x)                     Force renew of certificate even if it is longer valid than value in RENEW_DAYS
  --privkey (-p) path/to/key.pem   Use specified private key instead of account key (useful for revocation)
+ --config (-f) path/to/config.sh  Use specified config file
+ --hook (-k) path/to/hook.sh      Use specified script for hooks
+ --challenge (-t) http-01|dns-01  Which challenge should be used? Currently http-01 and dns-01 are supported
 ```
 
 ### domains.txt
@@ -49,28 +50,39 @@ example.net www.example.net wiki.example.net
 This states that there should be two certificates `example.com` and `example.net`,
 with the other domains in the corresponding line being their alternative names.
 
-### challenge-response
+### $WELLKNOWN / challenge-response
 
-This script uses `dns-01`-type verification so you need to have a hook to set the txt records on the domain.
+Boulder (acme-server) is looking for challenge responses under your domain in the `.well-known/acme-challenge` directory
+
+This script uses `http-01`-type verification (for now) so you need to have that directory available over normal http (no ssl).
+
+A full URL would look like `http://example.org/.well-known/acme-challenge/c3VjaC1jaGFsbGVuZ2UtbXVjaA-aW52YWxpZC13b3c`.
+
+An example setup to get this to work would be:
+
+nginx.conf:
+```
+...
+location /.well-known/acme-challenge {
+  alias /var/www/letsencrypt;
+}
+...
+```
+
+config.sh:
+```bash
+...
+WELLKNOWN="/var/www/letsencrypt"
+...
+```
+
+An alternative to setting the WELLKNOWN variable would be to create a symlink to the default location next to the script (or BASEDIR):
+`ln -s /var/www/letsencrypt .acme-challenges`
+
+### dns-01 challenge
+
+This script also supports the new `dns-01`-type verification. Be aware that at the moment this is not available on the production servers from letsencrypt. Please read https://community.letsencrypt.org/t/dns-challenge-is-in-staging/8322 for the current state of `dns-01` support.
+
+You need a hook script that deploys the challenge to your DNS server!
 
 A hook (written in PHP) is supplied using the Namecheap API for Namecheap-hosted DNS. It has its own small configuration for API keys in namecheap.config.php.
-
-## Import
-
-### import-account.pl
-
-This perl-script can be used to import the account key from the original letsencrypt client.
-
-You should copy `private_key.json` to the same directory as the script.
-The json-file can be found in a subdirectory of `/etc/letsencrypt/accounts/acme-v01.api.letsencrypt.org/directory`.
-
-Usage: `./import-account.pl`
-
-### import-certs.sh
-
-This script can be used to import private keys and certificates created by the original letsencrypt client.
-
-By default it expects the certificates to be found under `/etc/letsencrypt`, which is the default output directory of the original client.
-You can change the path by setting LETSENCRYPT in your config file: ```LETSENCRYPT="/etc/letsencrypt"```.
-
-Usage: `./import-certs.sh`
