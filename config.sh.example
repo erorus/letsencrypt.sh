@@ -24,6 +24,9 @@
 # Base directory for account key, generated certificates and list of domains (default: $SCRIPTDIR -- uses config directory if undefined)
 #BASEDIR=$SCRIPTDIR
 
+# Output directory for challenge-tokens to be served by webserver or deployed in HOOK (default: $BASEDIR/.acme-challenges)
+#WELLKNOWN="${BASEDIR}/.acme-challenges"
+
 # Location of private account key (default: $BASEDIR/private_key.pem)
 #PRIVATE_KEY="${BASEDIR}/private_key.pem"
 
@@ -41,7 +44,7 @@
 # After successfully signing certificate
 # Given arguments: deploy_cert domain path/to/privkey.pem path/to/cert.pem path/to/fullchain.pem
 #
-# BASEDIR variable is exported and can be used in an external program
+# BASEDIR and WELLKNOWN variables are exported and can be used in an external program
 # default: <unset>
 #HOOK=
 HOOK=$SCRIPTDIR/namecheap.hook.php
